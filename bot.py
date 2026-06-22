@@ -3,9 +3,7 @@ import sys
 import json
 import logging
 import requests
-import xml.etree.ElementTree as ET
-from datetime import datetime, date
-import pytz
+from datetime import datetime
 
 # ==============================================================================
 # CẤU HÌNH
@@ -18,52 +16,45 @@ STATE_FILE = "state.json"
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 
 def load_state():
-    if os.path.exists(STATE_FILE):
+    default_state = {"alerted": [], "checkpoints": []}
+    if not os.path.exists(STATE_FILE):
+        return default_state
+    try:
         with open(STATE_FILE, "r") as f:
-            return json.load(f)
-    return {"alerted": [], "checkpoints": []}
+            data = json.load(f)
+            # Kiểm tra xem có đủ các ngăn cần thiết không
+            if "alerted" not in data or "checkpoints" not in data:
+                return default_state
+            return data
+    except:
+        return default_state
 
 def save_state(state):
     with open(STATE_FILE, "w") as f:
-        json.dump(state, f)
-
-def send_telegram(message):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "HTML"}
-    requests.post(url, data=payload)
-
-def fetch_news():
-    # Thêm headers để giả dạng trình duyệt, tránh lỗi 403 Forbidden
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    }
-    try:
-        response = requests.get(FF_RSS_URL, headers=headers, timeout=10)
-        response.raise_for_status()
-        return response.content
-    except Exception as e:
-        logging.error(f"Fetch RSS lỗi: {e}")
-        return None
+        json.dump(state, f, indent=4)
 
 def run_bot():
     state = load_state()
-    logging.info(f"Đã load state: {len(state['alerted'])} alerted, {len(state['checkpoints'])} checkpoints.")
-    logging.info(f"▶ Run lúc {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-
-    xml_data = fetch_news()
-    if not xml_data:
-        logging.warning("Không lấy được dữ liệu RSS. Bỏ qua lần này.")
+    logging.info(f"Đã load state: {len(state.get('alerted', []))} alerted.")
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+    
+    try:
+        response = requests.get(FF_RSS_URL, headers=headers, timeout=10)
+        response.raise_for_status()
+        logging.info("Đã lấy dữ liệu RSS thành công.")
+        # ... (Phần logic xử lý tin tức của anh ở đây)
+    except Exception as e:
+        logging.error(f"Lỗi: {e}")
         return
 
-    # Xử lý nội dung RSS (phần logic phân tích tin tức ở đây)
-    # ... (Giữ nguyên logic xử lý tin tức của anh)
-
-    logging.info("Đã lưu state.json.")
     save_state(state)
     logging.info("✅ Bot hoàn thành.")
 
 if __name__ == "__main__":
     if not TELEGRAM_TOKEN or not CHAT_ID:
-        logging.error("TELEGRAM_TOKEN hoặc CHAT_ID chưa set. Thoát.")
+        logging.error("TELEGRAM_TOKEN hoặc CHAT_ID chưa set.")
         sys.exit(1)
     run_bot()
