@@ -1,23 +1,41 @@
 import os
+import sys
+import json
+import logging
 import requests
-import xml.etree.ElementTree as ET
+from datetime import datetime
 
-def send_telegram(message):
-    TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
-    CHAT_ID = os.environ.get("CHAT_ID", "")
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    requests.post(url, data={"chat_id": CHAT_ID, "text": message, "parse_mode": "HTML"})
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
+CHAT_ID = os.environ.get("CHAT_ID", "")
+FF_RSS_URL = "https://www.forexfactory.com/ffcal_week_this.xml"
+STATE_FILE = "state.json"
 
-headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-response = requests.get("https://www.forexfactory.com/ffcal_week_this.xml", headers=headers)
-root = ET.fromstring(response.content)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 
-# Lấy 3 tin đầu tiên trong danh sách để anh xem nó quét được gì
-msg = "🔍 <b>KẾT QUẢ QUÉT DỮ LIỆU THỰC TẾ:</b>\n\n"
-for event in root.findall('event')[:3]:
-    title = event.find('title').text
-    impact = event.find('impact').text
-    date = event.find('date').text
-    msg += f"• <b>{title}</b>\n  Tác động: {impact}\n  Ngày: {date}\n\n"
+def load_state():
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, "r") as f: return json.load(f)
+        except: pass
+    return {"alerted": [], "checkpoints": []}
 
-send_telegram(msg)
+def save_state(state):
+    with open(STATE_FILE, "w") as f: json.dump(state, f, indent=4)
+
+def run_bot():
+    state = load_state()
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+    try:
+        response = requests.get(FF_RSS_URL, headers=headers, timeout=10)
+        response.raise_for_status()
+        logging.info("Đã quét tin thành công. Đang chờ tin quan trọng...")
+    except Exception as e:
+        logging.error(f"Lỗi: {e}")
+        return
+    save_state(state)
+
+if __name__ == "__main__":
+    if not TELEGRAM_TOKEN or not CHAT_ID:
+        logging.error("Thiếu Token hoặc Chat ID!")
+        sys.exit(1)
+    run_bot()
